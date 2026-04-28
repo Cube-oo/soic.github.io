@@ -284,14 +284,18 @@ window.addEventListener("load", function(){
 
 function initMap(){
   map = L.map("map", {
-    zoomControl:true
+    zoomControl:true,
+    zoomAnimation:false,
+    fadeAnimation:false,
+    markerZoomAnimation:false
   }).setView([45.534, 10.214], 13);
 
   const streetMap = L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
       attribution:"&copy; OpenStreetMap contributors",
-      maxZoom:19
+      maxZoom:19,
+      crossOrigin:true
     }
   );
 
@@ -299,7 +303,8 @@ function initMap(){
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     {
       attribution:"Tiles &copy; Esri",
-      maxZoom:19
+      maxZoom:19,
+      crossOrigin:true
     }
   );
 
@@ -307,7 +312,8 @@ function initMap(){
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     {
       attribution:"Tiles &copy; Esri",
-      maxZoom:19
+      maxZoom:19,
+      crossOrigin:true
     }
   );
 
@@ -315,7 +321,8 @@ function initMap(){
     "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
     {
       attribution:"Labels &copy; Esri",
-      maxZoom:19
+      maxZoom:19,
+      crossOrigin:true
     }
   );
 
@@ -333,9 +340,7 @@ function initMap(){
   map.addLayer(drawnItems);
 
   const drawControl = new L.Control.Draw({
-    edit:{
-      featureGroup:drawnItems
-    },
+    edit:{ featureGroup:drawnItems },
     draw:{
       polygon:{
         allowIntersection:false,
@@ -564,14 +569,23 @@ function updateMission(){
     }
   });
 
+  refreshRouteLine();
+  calculateTotalDistance();
+  updateTable();
+}
+
+function refreshRouteLine(){
+  if(!routeLine) return;
+
   const routePoints = items
     .filter(item => item.type === "waypoint")
     .map(item => [item.lat,item.lon]);
 
   routeLine.setLatLngs(routePoints);
 
-  calculateTotalDistance();
-  updateTable();
+  if(routeLine.redraw){
+    routeLine.redraw();
+  }
 }
 
 function getPopupContent(item,index){
@@ -1107,7 +1121,10 @@ async function captureMapImage(options = {}){
         opacity:routeLine.options.opacity ?? 1
       });
 
-      routeLine.setStyle({opacity:0});
+      routeLine.setStyle({
+        opacity:0,
+        fillOpacity:0
+      });
     }
   }
 
@@ -1120,13 +1137,16 @@ async function captureMapImage(options = {}){
     });
   }
 
-  await waitForMapRender();
+  await waitForMapStable();
+  refreshMapOverlays();
+  await waitForMapStable();
 
   const canvas = await html2canvas(document.getElementById("map"),{
     useCORS:true,
     allowTaint:false,
     backgroundColor:"#ffffff",
-    scale:2
+    scale:2,
+    logging:false
   });
 
   hiddenState.forEach(state=>{
@@ -1135,7 +1155,10 @@ async function captureMapImage(options = {}){
     }
 
     if(state.type==="line"){
-      state.layer.setStyle({opacity:state.opacity});
+      state.layer.setStyle({
+        opacity:state.opacity,
+        fillOpacity:state.opacity
+      });
     }
   });
 
@@ -1143,9 +1166,43 @@ async function captureMapImage(options = {}){
     animate:false
   });
 
-  await waitForMapRender();
+  await waitForMapStable();
+  refreshMapOverlays();
 
   return canvas.toDataURL("image/png");
+}
+
+function refreshMapOverlays(){
+  if(!map) return;
+
+  map.invalidateSize();
+
+  refreshRouteLine();
+
+  layers.forEach(layer=>{
+    if(layer && layer.redraw){
+      layer.redraw();
+    }
+  });
+
+  if(drawnItems){
+    drawnItems.eachLayer(layer=>{
+      if(layer && layer.redraw){
+        layer.redraw();
+      }
+    });
+  }
+}
+
+function waitForMapStable(){
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      if(map){
+        map.invalidateSize();
+      }
+      resolve();
+    },900);
+  });
 }
 
 function getBoundsForReport(focus){
@@ -1188,19 +1245,8 @@ function getBoundsForReport(focus){
   return bounds;
 }
 
-function waitForMapRender(){
-  return new Promise(resolve=>{
-    setTimeout(()=>{
-      map.invalidateSize();
-      resolve();
-    },800);
-  });
-}
-
 async function exportPDFReport(){
   try{
-    const { jsPDF } = window.jspdf;
-
     const canvas = await html2canvas(document.getElementById("map"),{
       useCORS:true,
       allowTaint:false,
@@ -1209,7 +1255,7 @@ async function exportPDFReport(){
     });
 
     const mapImage = canvas.toDataURL("image/png");
-
+    const { jsPDF } = window.jspdf;
     const pdf = new jsPDF("landscape","mm","a4");
 
     pdf.setFont("helvetica","bold");
