@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOIC Mission Planner</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css">
+
+<style>
+:root{
+  --yellow:#FFDD09;
+  --bg:#111;
+  --panel:#1c1c1c;
+  --border:#333;
+  --text:#eee;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.app{
+  display:grid;
+  grid-template-columns:1fr 500px;
+  height:100vh;
+}
+
+#map{
+  width:100%;
+  height:100vh;
+  min-height:600px;
+  background:#222;
+}
+
+.panel{
+  background:var(--panel);
+  padding:16px;
+  overflow-y:auto;
+  border-left:2px solid var(--border);
+}
+
+h2{
+  margin-top:0;
+  color:var(--yellow);
+}
+
+.info{
+  font-size:13px;
+  color:#aaa;
+  line-height:1.5;
+}
+
+.mode-title{
+  margin-top:16px;
+  margin-bottom:6px;
+  font-size:13px;
+  color:var(--yellow);
+  text-transform:uppercase;
+  letter-spacing:1px;
+}
+
+button{
+  width:100%;
+  padding:10px;
+  margin:5px 0;
+  background:var(--yellow);
+  color:#111;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  font-weight:bold;
+}
+
+button.active{outline:2px solid white}
+
+button.danger{
+  background:#c0392b;
+  color:white;
+}
+
+button.small{
+  padding:6px;
+  font-size:12px;
+}
+
+input, textarea{
+  width:100%;
+  background:#111;
+  color:white;
+  border:1px solid #444;
+  border-radius:4px;
+  padding:6px;
+  margin:3px 0;
+}
+
+textarea{
+  min-height:70px;
+  resize:vertical;
+}
+
+#missionData{
+  height:160px;
+  color:var(--yellow);
+}
+
+input[type="color"]{
+  width:42px;
+  height:28px;
+  padding:0;
+  border:none;
+  background:transparent;
+}
+
+.mission-summary{
+  margin:12px 0;
+  padding:10px;
+  background:#111;
+  border:1px solid var(--yellow);
+  border-radius:6px;
+}
+
+.mission-summary span{
+  color:var(--yellow);
+  font-weight:bold;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px;
+  font-size:12px;
+}
+
+th,td{
+  border-bottom:1px solid var(--border);
+  padding:5px;
+  text-align:center;
+}
+
+.row-flex{
+  display:grid;
+  grid-template-columns:90px 1fr 35px;
+  gap:5px;
+  margin-bottom:5px;
+}
+
+.leaflet-popup-content{
+  color:#111;
+}
+
+.popup-input{
+  width:220px;
+  background:white;
+  color:#111;
+}
+
+.popup-textarea{
+  width:230px;
+  height:80px;
+  background:white;
+  color:#111;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+  <div id="map"></div>
+
+  <div class="panel">
+
+    <h2>SOIC Mission Planner</h2>
+
+    <div class="info">
+      Waypoint = rotta missione<br>
+      HQ = Headquarters<br>
+      Note = attenzione operativa<br>
+      Area = area circolare<br>
+      Mezzo = veicolo / asset operativo<br>
+      Poligoni e linee si disegnano dagli strumenti sulla mappa.
+    </div>
+
+    <div class="mode-title">Dati missione</div>
+
+    <label>Obiettivo / Finalità</label>
+    <textarea id="missionObjective"></textarea>
+
+    <label>Gruppi Partecipanti</label>
+    <textarea id="missionGroups"></textarea>
+
+    <label>Descrizione Attività</label>
+    <textarea id="missionDescription"></textarea>
+
+    <div class="mode-title">Cronoprogramma giornata</div>
+    <div id="scheduleRows"></div>
+    <button onclick="addScheduleRow()">Aggiungi attività</button>
+
+    <div class="mode-title">Modalità inserimento</div>
+
+    <button id="btnWaypoint" class="active" onclick="setMode('waypoint')">Waypoint Missione</button>
+    <button id="btnHQ" onclick="setMode('hq')">HQ - Headquarters</button>
+    <button id="btnNote" onclick="setMode('note')">Nota / Attenzione</button>
+    <button id="btnCircle" onclick="setMode('circle')">Area Circolare</button>
+    <button id="btnVehicle" onclick="setMode('vehicle')">Mezzo / Veicolo</button>
+
+    <div class="mode-title">Strumenti</div>
+    <button id="btnMeasure" onclick="toggleMeasureMode()">Misura distanza manuale</button>
+    <button onclick="clearMeasure()">Cancella misura manuale</button>
+
+    <div class="mission-summary">
+      <strong>Distanza totale waypoint:</strong><br>
+      <span id="totalDistance">0 m</span>
+    </div>
+
+    <div class="mode-title">Missione</div>
+
+    <button onclick="exportMission()">Esporta JSON</button>
+    <button onclick="importMission()">Importa JSON</button>
+    <button onclick="exportReport()">Report Operativo</button>
+    <button onclick="exportGestioneReport()">Report Gestione</button>
+    <button onclick="exportPDFReport()">PDF semplice con mappa</button>
+    <button class="danger" onclick="clearMission()">Cancella tutto</button>
+
+    <textarea id="missionData" placeholder="Dati missione JSON"></textarea>
+
+    <div class="mode-title">Elementi mappa</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Tipo</th>
+          <th>Lat</th>
+          <th>Lon</th>
+          <th>Alt/R</th>
+          <th>Colore</th>
+          <th>X</th>
+        </tr>
+      </thead>
+      <tbody id="waypointTable"></tbody>
+    </table>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+let map;
+let currentMode = "waypoint";
+let items = [];
+let layers = [];
+let drawnItems;
+let routeLine;
+let measureMode = false;
+let measurePoints = [];
+let measureLine = null;
+
+const DEFAULT_COLORS = {
+  waypoint:"#FFDD09",
+  hq:"#FFDD09",
+  note:"#FFDD09",
+  circle:"#FFDD09",
+  vehicle:"#FFDD09"
+};
+
+window.addEventListener("load", function(){
+  initMap();
+  addScheduleRow("08:00","Inizio attività");
+  updateMission();
+});
+
+function initMap(){
+  map = L.map("map", {
+    zoomControl:true
+  }).setView([45.534, 10.214], 13);
+
+  const streetMap = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      attribution:"&copy; OpenStreetMap contributors",
+      maxZoom:19
+    }
+  );
+
+  const satelliteMap = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+      attribution:"Tiles &copy; Esri",
+      maxZoom:19
+    }
+  );
+
+  const hybridSatellite = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+      attribution:"Tiles &copy; Esri",
+      maxZoom:19
+    }
+  );
+
+  const hybridLabels = L.tileLayer(
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    {
+      attribution:"Labels &copy; Esri",
+      maxZoom:19
+    }
+  );
+
+  const hybridMap = L.layerGroup([hybridSatellite, hybridLabels]);
+
+  streetMap.addTo(map);
+
+  L.control.layers({
+    "Mappa standard": streetMap,
+    "Satellite": satelliteMap,
+    "Satellite + nomi": hybridMap
+  }).addTo(map);
+
+  drawnItems = new L.FeatureGroup();
+  map.addLayer(drawnItems);
+
+  const drawControl = new L.Control.Draw({
+    edit:{
+      featureGroup:drawnItems
+    },
+    draw:{
+      polygon:{
+        allowIntersection:false,
+        showArea:true,
+        shapeOptions:{
+          color:"#FFDD09",
+          weight:3,
+          fillOpacity:0.25
+        }
+      },
+      rectangle:{
+        shapeOptions:{
+          color:"#FFDD09",
+          weight:3,
+          fillOpacity:0.25
+        }
+      },
+      polyline:{
+        shapeOptions:{
+          color:"#FFDD09",
+          weight:3
+        }
+      },
+      circle:false,
+      marker:false,
+      circlemarker:false
+    }
+  });
+
+  map.addControl(drawControl);
+
+  map.on(L.Draw.Event.CREATED,function(event){
+    drawnItems.addLayer(event.layer);
+  });
+
+  routeLine = L.polyline([],{
+    color:"#FFDD09",
+    weight:4
+  }).addTo(map);
+
+  map.on("click",function(e){
+    if(measureMode){
+      addMeasurePoint(e.latlng);
+      return;
+    }
+
+    if(currentMode==="waypoint"){
+      addItem("waypoint",e.latlng.lat,e.latlng.lng,50,"",DEFAULT_COLORS.waypoint,0,"");
+    }
+
+    if(currentMode==="hq"){
+      addItem("hq",e.latlng.lat,e.latlng.lng,0,"Headquarters",DEFAULT_COLORS.hq,0,"");
+    }
+
+    if(currentMode==="note"){
+      addItem("note",e.latlng.lat,e.latlng.lng,0,"Nota operativa",DEFAULT_COLORS.note,0,"");
+    }
+
+    if(currentMode==="circle"){
+      addItem("circle",e.latlng.lat,e.latlng.lng,0,"Area circolare",DEFAULT_COLORS.circle,100,"");
+    }
+
+    if(currentMode==="vehicle"){
+      addItem("vehicle",e.latlng.lat,e.latlng.lng,0,"Mezzo operativo",DEFAULT_COLORS.vehicle,0,"Mezzo");
+    }
+  });
+
+  setTimeout(function(){
+    map.invalidateSize();
+  }, 300);
+}
+
+function setMode(mode){
+  currentMode = mode;
+
+  ["Waypoint","HQ","Note","Circle","Vehicle"].forEach(id=>{
+    document.getElementById("btn"+id).classList.remove("active");
+  });
+
+  if(mode==="waypoint") document.getElementById("btnWaypoint").classList.add("active");
+  if(mode==="hq") document.getElementById("btnHQ").classList.add("active");
+  if(mode==="note") document.getElementById("btnNote").classList.add("active");
+  if(mode==="circle") document.getElementById("btnCircle").classList.add("active");
+  if(mode==="vehicle") document.getElementById("btnVehicle").classList.add("active");
+
+  if(measureMode){
+    measureMode = false;
+    document.getElementById("btnMeasure").classList.remove("active");
+  }
+}
+
+function waypointIcon(number,color){
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:34px;height:34px;border-radius:50%;background:${color};
+        border:3px solid #111;display:flex;align-items:center;justify-content:center;
+        font-weight:bold;color:#111;box-shadow:0 0 0 2px ${color};
+      ">${number}</div>
+    `,
+    iconSize:[42,42],
+    iconAnchor:[21,21]
+  });
+}
+
+function hqIcon(color){
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:42px;height:28px;background:${color};border:3px solid #111;
+        display:flex;align-items:center;justify-content:center;font-weight:bold;
+        color:#111;box-shadow:0 0 0 2px ${color};
+      ">HQ</div>
+    `,
+    iconSize:[48,36],
+    iconAnchor:[24,18]
+  });
+}
+
+function noteIcon(color){
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:30px;height:30px;background:${color};border:3px solid #111;
+        transform:rotate(45deg);display:flex;align-items:center;justify-content:center;
+        box-shadow:0 0 0 2px ${color};
+      ">
+        <span style="transform:rotate(-45deg);font-weight:bold;font-size:18px;color:#111;">!</span>
+      </div>
+    `,
+    iconSize:[42,42],
+    iconAnchor:[21,21]
+  });
+}
+
+function vehicleIcon(color,type){
+  const label = escapeHtml((type || "VEH").substring(0,3).toUpperCase());
+
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:46px;height:28px;background:${color};border:3px solid #111;
+        border-radius:4px;display:flex;align-items:center;justify-content:center;
+        font-weight:bold;font-size:11px;color:#111;box-shadow:0 0 0 2px ${color};
+      ">${label}</div>
+    `,
+    iconSize:[52,42],
+    iconAnchor:[26,21]
+  });
+}
+
+function getWaypointNumber(item){
+  return items.filter(i => i.type === "waypoint").indexOf(item) + 1;
+}
+
+function getIcon(item){
+  if(item.type==="waypoint") return waypointIcon(getWaypointNumber(item), item.color);
+  if(item.type==="hq") return hqIcon(item.color);
+  if(item.type==="vehicle") return vehicleIcon(item.color, item.vehicleType);
+  return noteIcon(item.color);
+}
+
+function addItem(type,lat,lon,alt,note,color,radius,vehicleType){
+  const item = {
+    id:Date.now() + Math.random(),
+    type,
+    lat,
+    lon,
+    alt,
+    note,
+    color:color || "#FFDD09",
+    radius:radius || 100,
+    vehicleType:vehicleType || ""
+  };
+
+  items.push(item);
+
+  let layer;
+
+  if(type==="circle"){
+    layer = L.circle([lat,lon],{
+      radius:item.radius,
+      color:item.color,
+      fillColor:item.color,
+      fillOpacity:0.22,
+      weight:2
+    }).addTo(map);
+  }else{
+    layer = L.marker([lat,lon],{
+      draggable:true,
+      icon:getIcon(item)
+    }).addTo(map);
+
+    layer.on("dragend",function(ev){
+      const pos = ev.target.getLatLng();
+      item.lat = pos.lat;
+      item.lon = pos.lng;
+      updateMission();
+    });
+  }
+
+  layers.push(layer);
+  updateMission();
+}
+
+function updateMission(){
+  if(!map || !routeLine) return;
+
+  items.forEach((item,i)=>{
+    if(item.type==="circle"){
+      layers[i].setLatLng([item.lat,item.lon]);
+      layers[i].setRadius(item.radius);
+      layers[i].setStyle({
+        color:item.color,
+        fillColor:item.color
+      });
+      layers[i].bindPopup(getPopupContent(item,i));
+    }else{
+      layers[i].setLatLng([item.lat,item.lon]);
+      layers[i].setIcon(getIcon(item));
+      layers[i].bindPopup(getPopupContent(item,i));
+    }
+  });
+
+  const routePoints = items
+    .filter(item => item.type === "waypoint")
+    .map(item => [item.lat,item.lon]);
+
+  routeLine.setLatLngs(routePoints);
+
+  calculateTotalDistance();
+  updateTable();
+}
+
+function getPopupContent(item,index){
+  if(item.type==="waypoint"){
+    return `
+      <b>Waypoint ${getWaypointNumber(item)}</b><br><br>
+      Altitudine:<br>
+      <input class="popup-input" type="number" value="${item.alt}" onchange="updateAltitude(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  if(item.type==="hq"){
+    return `
+      <b>HQ - Headquarters</b><br><br>
+      Nota:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.note)}" onchange="updateNote(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  if(item.type==="note"){
+    return `
+      <b>Nota / Attenzione</b><br><br>
+      Testo:<br>
+      <textarea class="popup-textarea" onchange="updateNote(${index}, this.value)">${escapeHtml(item.note)}</textarea><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  if(item.type==="circle"){
+    return `
+      <b>Area Circolare</b><br><br>
+      Raggio metri:<br>
+      <input class="popup-input" type="number" value="${item.radius}" onchange="updateRadius(${index}, this.value)"><br><br>
+      Nome / Nota:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.note)}" onchange="updateNote(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  if(item.type==="vehicle"){
+    return `
+      <b>Mezzo / Veicolo</b><br><br>
+      Tipo mezzo:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.vehicleType)}" onchange="updateVehicleType(${index}, this.value)"><br><br>
+      Nota:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.note)}" onchange="updateNote(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  return "";
+}
+
+function updateAltitude(index,value){
+  items[index].alt = Number(value);
+  updateMission();
+}
+
+function updateRadius(index,value){
+  items[index].radius = Number(value);
+  updateMission();
+}
+
+function updateNote(index,value){
+  items[index].note = value;
+  updateMission();
+}
+
+function updateColor(index,value){
+  items[index].color = value;
+  updateMission();
+}
+
+function updateVehicleType(index,value){
+  items[index].vehicleType = value;
+  updateMission();
+}
+
+function removeItem(index){
+  map.removeLayer(layers[index]);
+  layers.splice(index,1);
+  items.splice(index,1);
+  updateMission();
+}
+
+function calculateTotalDistance(){
+  const route = items.filter(i => i.type==="waypoint");
+  let total = 0;
+
+  for(let i=1;i<route.length;i++){
+    total += map.distance(
+      [route[i-1].lat,route[i-1].lon],
+      [route[i].lat,route[i].lon]
+    );
+  }
+
+  const out = document.getElementById("totalDistance");
+
+  if(total < 1000){
+    out.innerHTML = total.toFixed(1) + " m";
+  }else{
+    out.innerHTML = total.toFixed(1) + " m / " + (total/1000).toFixed(3) + " km";
+  }
+}
+
+function updateTable(){
+  const tbody = document.getElementById("waypointTable");
+  tbody.innerHTML = "";
+
+  items.forEach((item,i)=>{
+    let label = "";
+
+    if(item.type==="waypoint") label = "WP " + getWaypointNumber(item);
+    if(item.type==="hq") label = "HQ";
+    if(item.type==="note") label = "NOTE";
+    if(item.type==="circle") label = "AREA";
+    if(item.type==="vehicle") label = item.vehicleType || "MEZZO";
+
+    const valueField =
+      item.type==="waypoint" ? item.alt :
+      item.type==="circle" ? item.radius :
+      "-";
+
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${i+1}</td>
+      <td>${escapeHtml(label)}</td>
+      <td>${item.lat.toFixed(5)}</td>
+      <td>${item.lon.toFixed(5)}</td>
+      <td>${valueField}</td>
+      <td><input type="color" value="${item.color}" onchange="updateColor(${i}, this.value)"></td>
+      <td><button class="danger small" onclick="removeItem(${i})">X</button></td>
+    `;
+
+    tbody.appendChild(row);
+  });
+}
+
+function toggleMeasureMode(){
+  measureMode = !measureMode;
+  const btn = document.getElementById("btnMeasure");
+
+  if(measureMode){
+    btn.classList.add("active");
+    currentMode = "measure";
+
+    ["Waypoint","HQ","Note","Circle","Vehicle"].forEach(id=>{
+      document.getElementById("btn"+id).classList.remove("active");
+    });
+  }else{
+    btn.classList.remove("active");
+    setMode("waypoint");
+  }
+}
+
+function addMeasurePoint(latlng){
+  measurePoints.push(latlng);
+
+  if(measureLine){
+    measureLine.setLatLngs(measurePoints);
+  }else{
+    measureLine = L.polyline(measurePoints,{
+      color:"#FFDD09",
+      weight:4,
+      dashArray:"6,6"
+    }).addTo(map);
+  }
+
+  let total = 0;
+
+  for(let i=1;i<measurePoints.length;i++){
+    total += map.distance(measurePoints[i-1],measurePoints[i]);
+  }
+
+  measureLine.bindPopup(
+    "Distanza misurata: " +
+    total.toFixed(1) + " m / " +
+    (total/1000).toFixed(3) + " km"
+  ).openPopup();
+}
+
+function clearMeasure(){
+  measurePoints = [];
+
+  if(measureLine){
+    map.removeLayer(measureLine);
+    measureLine = null;
+  }
+}
+
+function addScheduleRow(time="",activity=""){
+  const container = document.getElementById("scheduleRows");
+  const row = document.createElement("div");
+  row.className = "row-flex";
+
+  row.innerHTML = `
+    <input type="time" value="${escapeHtml(time)}">
+    <input type="text" value="${escapeHtml(activity)}" placeholder="Attività">
+    <button class="danger small" onclick="this.parentElement.remove()">X</button>
+  `;
+
+  container.appendChild(row);
+}
+
+function getScheduleData(){
+  const rows = document.querySelectorAll("#scheduleRows .row-flex");
+  const schedule = [];
+
+  rows.forEach(row=>{
+    const inputs = row.querySelectorAll("input");
+    schedule.push({
+      time:inputs[0].value,
+      activity:inputs[1].value
+    });
+  });
+
+  return schedule;
+}
+
+function setScheduleData(schedule){
+  document.getElementById("scheduleRows").innerHTML = "";
+
+  if(!schedule || schedule.length === 0){
+    addScheduleRow("08:00","Inizio attività");
+    return;
+  }
+
+  schedule.forEach(row=>{
+    addScheduleRow(row.time || "",row.activity || "");
+  });
+}
+
+function exportMission(){
+  const data = {
+    name:"SOIC Mission Planner",
+    created:new Date().toISOString(),
+    objective:document.getElementById("missionObjective").value,
+    groups:document.getElementById("missionGroups").value,
+    description:document.getElementById("missionDescription").value,
+    schedule:getScheduleData(),
+    items:items,
+    drawnGeoJSON:drawnItems ? drawnItems.toGeoJSON() : null
+  };
+
+  document.getElementById("missionData").value = JSON.stringify(data,null,2);
+}
+
+function importMission(){
+  try{
+    const data = JSON.parse(document.getElementById("missionData").value);
+
+    layers.forEach(layer=>map.removeLayer(layer));
+    layers = [];
+    items = [];
+    routeLine.setLatLngs([]);
+    drawnItems.clearLayers();
+
+    document.getElementById("missionObjective").value = data.objective || "";
+    document.getElementById("missionGroups").value = data.groups || "";
+    document.getElementById("missionDescription").value = data.description || "";
+    setScheduleData(data.schedule || []);
+
+    if(data.items){
+      data.items.forEach(item=>{
+        addItem(
+          item.type,
+          item.lat,
+          item.lon,
+          item.alt || 0,
+          item.note || "",
+          item.color || "#FFDD09",
+          item.radius || 100,
+          item.vehicleType || ""
+        );
+      });
+    }
+
+    if(data.drawnGeoJSON){
+      L.geoJSON(data.drawnGeoJSON,{
+        style:{
+          color:"#FFDD09",
+          weight:3,
+          fillOpacity:0.25
+        },
+        onEachFeature:function(feature,layer){
+          drawnItems.addLayer(layer);
+        }
+      });
+    }
+
+    updateMission();
+
+  }catch(e){
+    alert("JSON non valido");
+  }
+}
+
+function clearMission(){
+  layers.forEach(layer=>map.removeLayer(layer));
+  layers = [];
+  items = [];
+
+  routeLine.setLatLngs([]);
+  drawnItems.clearLayers();
+  clearMeasure();
+
+  document.getElementById("missionObjective").value = "";
+  document.getElementById("missionGroups").value = "";
+  document.getElementById("missionDescription").value = "";
+  document.getElementById("missionData").value = "";
+  document.getElementById("scheduleRows").innerHTML = "";
+
+  addScheduleRow("08:00","Inizio attività");
+  updateMission();
+}
+
+async function exportReport(){
+  const areaImage = await captureMapImage({
+    hideWaypoints:true,
+    focus:"nonWaypoint"
+  });
+
+  const hqImage = await captureMapImage({
+    hideWaypoints:true,
+    focus:"hq"
+  });
+
+  const objective = document.getElementById("missionObjective").value || "";
+  const groups = document.getElementById("missionGroups").value || "";
+  const description = document.getElementById("missionDescription").value || "";
+  const schedule = getScheduleData();
+  const totalDistance = document.getElementById("totalDistance").innerText;
+
+  const nonWaypointItems = items.filter(i => i.type !== "waypoint");
+
+  const gpsListHtml = nonWaypointItems.map((item,index)=>{
+    let label = item.type.toUpperCase();
+
+    if(item.type==="hq") label = "HQ";
+    if(item.type==="note") label = "NOTA";
+    if(item.type==="circle") label = "AREA CIRCOLARE";
+    if(item.type==="vehicle") label = item.vehicleType || "MEZZO";
+
+    return `
+      <li>
+        <strong>${index + 1}. ${escapeHtml(label)}</strong><br>
+        Lat: ${item.lat.toFixed(6)} · Lon: ${item.lon.toFixed(6)}
+        ${item.type==="circle" ? `<br>Raggio: ${item.radius} m` : ""}
+        ${item.note ? `<br>Nota: ${escapeHtml(item.note)}` : ""}
+      </li>
+    `;
+  }).join("");
+
+  const scheduleHtml = schedule.map(row =>
+    `<li><strong>Ore ${escapeHtml(row.time || "--:--")}</strong> ${escapeHtml(row.activity || "")}</li>`
+  ).join("");
+
+  const reportWindow = window.open("","_blank");
+
+  reportWindow.document.write(`
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>SOIC Mission Report</title>
+<style>
+body{font-family:"Times New Roman",serif;margin:20px;color:#000;background:#fff;font-size:12px}
+.page{max-width:1120px;margin:auto}
+.header{border:1px solid #000;padding:8px;text-align:center}
+.header h1{font-size:18px;margin:0;text-transform:uppercase}
+.subtitle{text-align:center;margin:12px 0 4px;color:#0070a8;font-weight:bold;text-decoration:underline}
+.title-bar{border:1px solid #000;text-align:center;font-weight:bold;padding:4px;background:#ddd;text-transform:uppercase}
+.map-row{display:grid;grid-template-columns:1fr 1fr;border-left:1px solid #000;border-right:1px solid #000}
+.map-cell{border-right:1px solid #000;padding:6px}
+.map-cell:last-child{border-right:none}
+.map-cell img{width:100%;height:250px;object-fit:cover;border:1px solid #000}
+.caption{text-align:center;font-weight:bold;margin-bottom:4px}
+.content-row{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid #000}
+.box{border-right:1px solid #000;min-height:260px}
+.box:last-child{border-right:none}
+.box-title{font-weight:bold;text-transform:uppercase;border-bottom:1px solid #000;padding:4px 6px;background:#eee}
+.box-content{padding:8px}
+ul{margin:0;padding-left:18px}
+li{margin-bottom:5px}
+.print-btn{margin-bottom:12px;padding:8px 14px;background:#FFDD09;border:1px solid #000;font-weight:bold;cursor:pointer}
+@media print{button{display:none}body{margin:8mm}}
+</style>
+</head>
+
+<body>
+<button class="print-btn" onclick="window.print()">Stampa / Salva PDF</button>
+
+<div class="page">
+  <div class="header">
+    <h1>SOIC Mission Planner</h1>
+    <p><strong>Report operativo di missione</strong></p>
+  </div>
+
+  <div class="subtitle">Esercitazione / Attività Operativa</div>
+
+  <div class="title-bar">PLANIMETRIA LUOGO ATTIVITÀ</div>
+
+  <div class="map-row">
+    <div class="map-cell">
+      <div class="caption">Area operativa senza waypoint</div>
+      <img src="${areaImage}">
+    </div>
+
+    <div class="map-cell">
+      <div class="caption">Posizione HQ</div>
+      <img src="${hqImage}">
+    </div>
+  </div>
+
+  <div class="content-row">
+    <div class="box">
+      <div class="box-title">Obiettivo / Finalità</div>
+      <div class="box-content">${textToList(objective)}</div>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Gruppi partecipanti</div>
+      <div class="box-content">
+        ${textToParagraph(groups)}
+        <p><strong>Distanza waypoint:</strong><br>${escapeHtml(totalDistance)}</p>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Descrizione attività</div>
+      <div class="box-content">
+        ${textToParagraph(description)}
+        <p><strong>Cronoprogramma:</strong></p>
+        <ul>${scheduleHtml || "<li>Nessuna attività programmata</li>"}</ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="title-bar">POSIZIONI GPS ELEMENTI OPERATIVI</div>
+  <div style="border:1px solid #000;border-top:none;padding:8px;">
+    <ul>${gpsListHtml || "<li>Nessun elemento operativo inserito.</li>"}</ul>
+  </div>
+</div>
+
+</body>
+</html>
+  `);
+
+  reportWindow.document.close();
+}
+
+async function exportGestioneReport(){
+  const gestioneImage = await captureMapImage({
+    hideWaypoints:false,
+    focus:"all"
+  });
+
+  const reportWindow = window.open("","_blank");
+
+  reportWindow.document.write(`
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>SOIC Report Gestione</title>
+<style>
+body{margin:20px;background:#fff;color:#000;font-family:Arial,sans-serif}
+.header{text-align:center;border:1px solid #000;padding:8px;margin-bottom:10px}
+.header h1{margin:0;font-size:20px;text-transform:uppercase}
+.map{width:100%;border:1px solid #000}
+.map img{width:100%;height:auto;display:block}
+.print-btn{margin-bottom:12px;padding:8px 14px;background:#FFDD09;border:1px solid #000;font-weight:bold;cursor:pointer}
+@media print{button{display:none}body{margin:8mm}}
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">Stampa / Salva PDF</button>
+
+<div class="header">
+  <h1>SOIC Mission Planner</h1>
+  <p><strong>Report Gestione</strong> - Mappa operativa con tutte le icone posizionate</p>
+</div>
+
+<div class="map">
+  <img src="${gestioneImage}">
+</div>
+
+</body>
+</html>
+  `);
+
+  reportWindow.document.close();
+}
+
+async function captureMapImage(options = {}){
+  const originalView = {
+    center:map.getCenter(),
+    zoom:map.getZoom()
+  };
+
+  const hiddenState = [];
+
+  if(options.hideWaypoints){
+    items.forEach((item,index)=>{
+      if(item.type==="waypoint"){
+        const layer = layers[index];
+
+        if(layer && layer.setOpacity){
+          hiddenState.push({
+            layer:layer,
+            type:"marker",
+            opacity:layer.options.opacity ?? 1
+          });
+
+          layer.setOpacity(0);
+        }
+      }
+    });
+
+    if(routeLine){
+      hiddenState.push({
+        layer:routeLine,
+        type:"line",
+        opacity:routeLine.options.opacity ?? 1
+      });
+
+      routeLine.setStyle({opacity:0});
+    }
+  }
+
+  const bounds = getBoundsForReport(options.focus);
+
+  if(bounds && bounds.isValid()){
+    map.fitBounds(bounds.pad(0.18),{
+      animate:false,
+      maxZoom:18
+    });
+  }
+
+  await waitForMapRender();
+
+  const canvas = await html2canvas(document.getElementById("map"),{
+    useCORS:true,
+    allowTaint:false,
+    backgroundColor:"#ffffff",
+    scale:2
+  });
+
+  hiddenState.forEach(state=>{
+    if(state.type==="marker"){
+      state.layer.setOpacity(state.opacity);
+    }
+
+    if(state.type==="line"){
+      state.layer.setStyle({opacity:state.opacity});
+    }
+  });
+
+  map.setView(originalView.center,originalView.zoom,{
+    animate:false
+  });
+
+  await waitForMapRender();
+
+  return canvas.toDataURL("image/png");
+}
+
+function getBoundsForReport(focus){
+  let selected = [];
+
+  if(focus==="hq"){
+    selected = items.filter(i => i.type==="hq");
+  }
+
+  if(focus==="nonWaypoint"){
+    selected = items.filter(i => i.type!=="waypoint");
+  }
+
+  if(focus==="all"){
+    selected = items;
+  }
+
+  if(selected.length===0 && items.length>0){
+    selected = items;
+  }
+
+  if(selected.length===0){
+    return null;
+  }
+
+  const bounds = L.latLngBounds([]);
+
+  selected.forEach(item=>{
+    bounds.extend([item.lat,item.lon]);
+
+    if(item.type==="circle" && item.radius){
+      const circleBounds = L.circle([item.lat,item.lon],{
+        radius:item.radius
+      }).getBounds();
+
+      bounds.extend(circleBounds);
+    }
+  });
+
+  return bounds;
+}
+
+function waitForMapRender(){
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      map.invalidateSize();
+      resolve();
+    },800);
+  });
+}
+
+async function exportPDFReport(){
+  try{
+    const { jsPDF } = window.jspdf;
+
+    const canvas = await html2canvas(document.getElementById("map"),{
+      useCORS:true,
+      allowTaint:false,
+      backgroundColor:"#ffffff",
+      scale:2
+    });
+
+    const mapImage = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF("landscape","mm","a4");
+
+    pdf.setFont("helvetica","bold");
+    pdf.setFontSize(16);
+    pdf.text("SOIC Mission Planner - Report Operativo",12,12);
+
+    pdf.addImage(mapImage,"PNG",12,25,270,160);
+    pdf.save("SOIC_Mission_Report.pdf");
+
+  }catch(e){
+    alert("Errore durante la generazione PDF. Usa localhost, NAS o server web, non file:///.");
+  }
+}
+
+function textToList(text){
+  if(!text.trim()) return "<p>Non specificato.</p>";
+
+  const rows = text
+    .split("\n")
+    .map(r => r.trim())
+    .filter(r => r.length > 0);
+
+  return "<ul>" + rows.map(r => `<li>${escapeHtml(r)}</li>`).join("") + "</ul>";
+}
+
+function textToParagraph(text){
+  if(!text.trim()) return "<p>Non specificato.</p>";
+  return "<p>" + escapeHtml(text).replaceAll("\n","<br>") + "</p>";
+}
+
+function escapeHtml(text){
+  return String(text)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+</script>
+
+</body>
+</html>
