@@ -46,9 +46,20 @@ body{
   border-left:2px solid var(--border);
 }
 
+.logo-box{
+  text-align:center;
+  margin-bottom:10px;
+}
+
+.logo-box img{
+  max-width:120px;
+  height:auto;
+}
+
 h2{
   margin-top:0;
   color:var(--yellow);
+  text-align:center;
 }
 
 .info{
@@ -178,6 +189,10 @@ th,td{
 
   <div class="panel">
 
+    <div class="logo-box">
+      <img src="https://www.soic.it/wp-content/uploads/2026/02/cropped-SOIC-logo-senza-sfondo.png" alt="SOIC Logo">
+    </div>
+
     <h2>SOIC Mission Planner</h2>
 
     <div class="info">
@@ -186,6 +201,8 @@ th,td{
       Note = attenzione operativa<br>
       Area = area circolare<br>
       Mezzo = veicolo / asset operativo<br>
+      Operatore = personale sul campo<br>
+      Unità Cinofila = team cane + conduttore<br>
       Poligoni e linee si disegnano dagli strumenti sulla mappa.
     </div>
 
@@ -211,6 +228,8 @@ th,td{
     <button id="btnNote" onclick="setMode('note')">Nota / Attenzione</button>
     <button id="btnCircle" onclick="setMode('circle')">Area Circolare</button>
     <button id="btnVehicle" onclick="setMode('vehicle')">Mezzo / Veicolo</button>
+    <button id="btnOperator" onclick="setMode('operator')">Operatore</button>
+    <button id="btnDogunit" onclick="setMode('dogunit')">Unità Cinofila</button>
 
     <div class="mode-title">Strumenti</div>
     <button id="btnMeasure" onclick="toggleMeasureMode()">Misura distanza manuale</button>
@@ -258,6 +277,8 @@ th,td{
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
+const SOIC_LOGO = "https://www.soic.it/wp-content/uploads/2026/02/cropped-SOIC-logo-senza-sfondo.png";
+
 let map;
 let currentMode = "waypoint";
 let items = [];
@@ -273,7 +294,9 @@ const DEFAULT_COLORS = {
   hq:"#FFDD09",
   note:"#FFDD09",
   circle:"#FFDD09",
-  vehicle:"#FFDD09"
+  vehicle:"#FFDD09",
+  operator:"#FFDD09",
+  dogunit:"#FFDD09"
 };
 
 window.addEventListener("load", function(){
@@ -406,6 +429,14 @@ function initMap(){
     if(currentMode==="vehicle"){
       addItem("vehicle",e.latlng.lat,e.latlng.lng,0,"Mezzo operativo",DEFAULT_COLORS.vehicle,0,"Mezzo");
     }
+
+    if(currentMode==="operator"){
+      addItem("operator",e.latlng.lat,e.latlng.lng,0,"Operatore sul campo",DEFAULT_COLORS.operator,0,"");
+    }
+
+    if(currentMode==="dogunit"){
+      addItem("dogunit",e.latlng.lat,e.latlng.lng,0,"Unità cinofila operativa",DEFAULT_COLORS.dogunit,0,"");
+    }
   });
 
   setTimeout(function(){
@@ -416,7 +447,7 @@ function initMap(){
 function setMode(mode){
   currentMode = mode;
 
-  ["Waypoint","HQ","Note","Circle","Vehicle"].forEach(id=>{
+  ["Waypoint","HQ","Note","Circle","Vehicle","Operator","Dogunit"].forEach(id=>{
     document.getElementById("btn"+id).classList.remove("active");
   });
 
@@ -425,6 +456,8 @@ function setMode(mode){
   if(mode==="note") document.getElementById("btnNote").classList.add("active");
   if(mode==="circle") document.getElementById("btnCircle").classList.add("active");
   if(mode==="vehicle") document.getElementById("btnVehicle").classList.add("active");
+  if(mode==="operator") document.getElementById("btnOperator").classList.add("active");
+  if(mode==="dogunit") document.getElementById("btnDogunit").classList.add("active");
 
   if(measureMode){
     measureMode = false;
@@ -496,6 +529,61 @@ function vehicleIcon(color,type){
   });
 }
 
+function operatorIcon(color,name){
+  const label = escapeHtml((name || "OP").substring(0,3).toUpperCase());
+
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:34px;height:34px;border-radius:50%;background:${color};
+        border:3px solid #111;display:flex;align-items:center;justify-content:center;
+        font-weight:bold;font-size:11px;color:#111;box-shadow:0 0 0 2px ${color};
+        position:relative;
+      ">
+        ${label}
+        <div style="
+          position:absolute;bottom:-13px;left:50%;transform:translateX(-50%);
+          width:18px;height:10px;background:${color};border:3px solid #111;
+          border-top:none;border-radius:0 0 10px 10px;
+        "></div>
+      </div>
+    `,
+    iconSize:[44,52],
+    iconAnchor:[22,26]
+  });
+}
+
+function dogUnitIcon(color,name){
+  const label = escapeHtml((name || "K9").substring(0,3).toUpperCase());
+
+  return L.divIcon({
+    className:"",
+    html:`
+      <div style="
+        width:48px;height:30px;background:${color};border:3px solid #111;
+        border-radius:18px 18px 12px 12px;display:flex;align-items:center;
+        justify-content:center;font-weight:bold;font-size:11px;color:#111;
+        box-shadow:0 0 0 2px ${color};position:relative;
+      ">
+        ${label}
+        <div style="
+          position:absolute;top:-9px;left:6px;width:10px;height:12px;
+          background:${color};border:3px solid #111;border-bottom:none;
+          transform:rotate(-25deg);
+        "></div>
+        <div style="
+          position:absolute;top:-9px;right:6px;width:10px;height:12px;
+          background:${color};border:3px solid #111;border-bottom:none;
+          transform:rotate(25deg);
+        "></div>
+      </div>
+    `,
+    iconSize:[56,42],
+    iconAnchor:[28,21]
+  });
+}
+
 function getWaypointNumber(item){
   return items.filter(i => i.type === "waypoint").indexOf(item) + 1;
 }
@@ -504,6 +592,8 @@ function getIcon(item){
   if(item.type==="waypoint") return waypointIcon(getWaypointNumber(item), item.color);
   if(item.type==="hq") return hqIcon(item.color);
   if(item.type==="vehicle") return vehicleIcon(item.color, item.vehicleType);
+  if(item.type==="operator") return operatorIcon(item.color, item.operatorName);
+  if(item.type==="dogunit") return dogUnitIcon(item.color, item.dogUnitName);
   return noteIcon(item.color);
 }
 
@@ -517,7 +607,9 @@ function addItem(type,lat,lon,alt,note,color,radius,vehicleType){
     note,
     color:color || "#FFDD09",
     radius:radius || 100,
-    vehicleType:vehicleType || ""
+    vehicleType:vehicleType || "",
+    operatorName:type==="operator" ? "Operatore" : "",
+    dogUnitName:type==="dogunit" ? "K9" : ""
   };
 
   items.push(item);
@@ -643,6 +735,30 @@ function getPopupContent(item,index){
     `;
   }
 
+  if(item.type==="operator"){
+    return `
+      <b>Operatore</b><br><br>
+      Nome / Sigla:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.operatorName || "")}" onchange="updateOperatorName(${index}, this.value)"><br><br>
+      Nota:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.note)}" onchange="updateNote(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
+  if(item.type==="dogunit"){
+    return `
+      <b>Unità Cinofila</b><br><br>
+      Nome / Sigla unità:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.dogUnitName || "")}" onchange="updateDogUnitName(${index}, this.value)"><br><br>
+      Nota:<br>
+      <input class="popup-input" type="text" value="${escapeHtml(item.note)}" onchange="updateNote(${index}, this.value)"><br><br>
+      Colore:<br>
+      <input type="color" value="${item.color}" onchange="updateColor(${index}, this.value)">
+    `;
+  }
+
   return "";
 }
 
@@ -668,6 +784,16 @@ function updateColor(index,value){
 
 function updateVehicleType(index,value){
   items[index].vehicleType = value;
+  updateMission();
+}
+
+function updateOperatorName(index,value){
+  items[index].operatorName = value;
+  updateMission();
+}
+
+function updateDogUnitName(index,value){
+  items[index].dogUnitName = value;
   updateMission();
 }
 
@@ -710,6 +836,8 @@ function updateTable(){
     if(item.type==="note") label = "NOTE";
     if(item.type==="circle") label = "AREA";
     if(item.type==="vehicle") label = item.vehicleType || "MEZZO";
+    if(item.type==="operator") label = item.operatorName || "OPERATORE";
+    if(item.type==="dogunit") label = item.dogUnitName || "K9";
 
     const valueField =
       item.type==="waypoint" ? item.alt :
@@ -740,7 +868,7 @@ function toggleMeasureMode(){
     btn.classList.add("active");
     currentMode = "measure";
 
-    ["Waypoint","HQ","Note","Circle","Vehicle"].forEach(id=>{
+    ["Waypoint","HQ","Note","Circle","Vehicle","Operator","Dogunit"].forEach(id=>{
       document.getElementById("btn"+id).classList.remove("active");
     });
   }else{
@@ -868,6 +996,11 @@ function importMission(){
           item.radius || 100,
           item.vehicleType || ""
         );
+
+        const last = items[items.length - 1];
+
+        last.operatorName = item.operatorName || last.operatorName || "";
+        last.dogUnitName = item.dogUnitName || last.dogUnitName || "";
       });
     }
 
@@ -936,6 +1069,8 @@ async function exportReport(){
     if(item.type==="note") label = "NOTA";
     if(item.type==="circle") label = "AREA CIRCOLARE";
     if(item.type==="vehicle") label = item.vehicleType || "MEZZO";
+    if(item.type==="operator") label = item.operatorName || "OPERATORE";
+    if(item.type==="dogunit") label = item.dogUnitName || "UNITÀ CINOFILA";
 
     return `
       <li>
@@ -962,7 +1097,8 @@ async function exportReport(){
 <style>
 body{font-family:"Times New Roman",serif;margin:20px;color:#000;background:#fff;font-size:12px}
 .page{max-width:1120px;margin:auto}
-.header{border:1px solid #000;padding:8px;text-align:center}
+.header{border:1px solid #000;padding:8px;text-align:center;position:relative}
+.header img{position:absolute;left:12px;top:8px;width:70px;height:auto}
 .header h1{font-size:18px;margin:0;text-transform:uppercase}
 .subtitle{text-align:center;margin:12px 0 4px;color:#0070a8;font-weight:bold;text-decoration:underline}
 .title-bar{border:1px solid #000;text-align:center;font-weight:bold;padding:4px;background:#ddd;text-transform:uppercase}
@@ -988,6 +1124,7 @@ li{margin-bottom:5px}
 
 <div class="page">
   <div class="header">
+    <img src="${SOIC_LOGO}" alt="SOIC Logo">
     <h1>SOIC Mission Planner</h1>
     <p><strong>Report operativo di missione</strong></p>
   </div>
@@ -1048,7 +1185,8 @@ li{margin-bottom:5px}
 async function exportGestioneReport(){
   const gestioneImage = await captureMapImage({
     hideWaypoints:false,
-    focus:"all"
+    focus:"all",
+    redrawRouteOnCanvas:true
   });
 
   const reportWindow = window.open("","_blank");
@@ -1061,7 +1199,8 @@ async function exportGestioneReport(){
 <title>SOIC Report Gestione</title>
 <style>
 body{margin:20px;background:#fff;color:#000;font-family:Arial,sans-serif}
-.header{text-align:center;border:1px solid #000;padding:8px;margin-bottom:10px}
+.header{text-align:center;border:1px solid #000;padding:8px;margin-bottom:10px;position:relative}
+.header img{position:absolute;left:12px;top:8px;width:80px;height:auto}
 .header h1{margin:0;font-size:20px;text-transform:uppercase}
 .map{width:100%;border:1px solid #000}
 .map img{width:100%;height:auto;display:block}
@@ -1074,6 +1213,7 @@ body{margin:20px;background:#fff;color:#000;font-family:Arial,sans-serif}
 <button class="print-btn" onclick="window.print()">Stampa / Salva PDF</button>
 
 <div class="header">
+  <img src="${SOIC_LOGO}" alt="SOIC Logo">
   <h1>SOIC Mission Planner</h1>
   <p><strong>Report Gestione</strong> - Mappa operativa con tutte le icone posizionate</p>
 </div>
@@ -1113,19 +1253,19 @@ async function captureMapImage(options = {}){
         }
       }
     });
+  }
 
-    if(routeLine){
-      hiddenState.push({
-        layer:routeLine,
-        type:"line",
-        opacity:routeLine.options.opacity ?? 1
-      });
+  if(routeLine && (options.hideWaypoints || options.redrawRouteOnCanvas)){
+    hiddenState.push({
+      layer:routeLine,
+      type:"line",
+      opacity:routeLine.options.opacity ?? 1
+    });
 
-      routeLine.setStyle({
-        opacity:0,
-        fillOpacity:0
-      });
-    }
+    routeLine.setStyle({
+      opacity:0,
+      fillOpacity:0
+    });
   }
 
   const bounds = getBoundsForReport(options.focus);
@@ -1149,6 +1289,10 @@ async function captureMapImage(options = {}){
     logging:false
   });
 
+  if(options.redrawRouteOnCanvas){
+    drawRouteOnCanvas(canvas);
+  }
+
   hiddenState.forEach(state=>{
     if(state.type==="marker"){
       state.layer.setOpacity(state.opacity);
@@ -1170,6 +1314,48 @@ async function captureMapImage(options = {}){
   refreshMapOverlays();
 
   return canvas.toDataURL("image/png");
+}
+
+function drawRouteOnCanvas(canvas){
+  const route = items.filter(item => item.type === "waypoint");
+
+  if(route.length < 2){
+    return;
+  }
+
+  const scaleX = canvas.width / map.getContainer().clientWidth;
+  const scaleY = canvas.height / map.getContainer().clientHeight;
+
+  const ctx = canvas.getContext("2d");
+
+  ctx.save();
+
+  ctx.strokeStyle = "#FFDD09";
+  ctx.lineWidth = 5 * scaleX;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  ctx.shadowColor = "rgba(0,0,0,0.65)";
+  ctx.shadowBlur = 2 * scaleX;
+  ctx.shadowOffsetX = 1 * scaleX;
+  ctx.shadowOffsetY = 1 * scaleY;
+
+  ctx.beginPath();
+
+  route.forEach((wp,index)=>{
+    const point = map.latLngToContainerPoint([wp.lat, wp.lon]);
+    const x = point.x * scaleX;
+    const y = point.y * scaleY;
+
+    if(index === 0){
+      ctx.moveTo(x,y);
+    }else{
+      ctx.lineTo(x,y);
+    }
+  });
+
+  ctx.stroke();
+  ctx.restore();
 }
 
 function refreshMapOverlays(){
