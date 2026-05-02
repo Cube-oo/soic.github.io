@@ -196,6 +196,7 @@ th,td{
     <h2>SOIC Mission Planner</h2>
 
     <div class="info">
+      Doppio clic sulla mappa per inserire l’elemento selezionato.<br><br>
       Waypoint = rotta missione<br>
       HQ = Headquarters<br>
       Note = attenzione operativa<br>
@@ -310,7 +311,8 @@ function initMap(){
     zoomControl:true,
     zoomAnimation:false,
     fadeAnimation:false,
-    markerZoomAnimation:false
+    markerZoomAnimation:false,
+    doubleClickZoom:false
   }).setView([45.534, 10.214], 13);
 
   const streetMap = L.tileLayer(
@@ -404,7 +406,7 @@ function initMap(){
     weight:4
   }).addTo(map);
 
-  map.on("click",function(e){
+  map.on("dblclick",function(e){
     if(measureMode){
       addMeasurePoint(e.latlng);
       return;
@@ -1258,14 +1260,11 @@ async function captureMapImage(options = {}){
   if(routeLine && (options.hideWaypoints || options.redrawRouteOnCanvas)){
     hiddenState.push({
       layer:routeLine,
-      type:"line",
-      opacity:routeLine.options.opacity ?? 1
+      type:"routeLine",
+      visible:map.hasLayer(routeLine)
     });
 
-    routeLine.setStyle({
-      opacity:0,
-      fillOpacity:0
-    });
+    map.removeLayer(routeLine);
   }
 
   const bounds = getBoundsForReport(options.focus);
@@ -1298,11 +1297,8 @@ async function captureMapImage(options = {}){
       state.layer.setOpacity(state.opacity);
     }
 
-    if(state.type==="line"){
-      state.layer.setStyle({
-        opacity:state.opacity,
-        fillOpacity:state.opacity
-      });
+    if(state.type==="routeLine" && state.visible){
+      routeLine.addTo(map);
     }
   });
 
@@ -1317,21 +1313,50 @@ async function captureMapImage(options = {}){
 }
 
 function drawRouteOnCanvas(canvas){
-  const route = items.filter(item => item.type === "waypoint");
+  const routeIndexes = [];
 
-  if(route.length < 2){
+  items.forEach((item,index)=>{
+    if(item.type === "waypoint"){
+      routeIndexes.push(index);
+    }
+  });
+
+  if(routeIndexes.length < 2){
     return;
   }
 
-  const scaleX = canvas.width / map.getContainer().clientWidth;
-  const scaleY = canvas.height / map.getContainer().clientHeight;
+  const mapRect = map.getContainer().getBoundingClientRect();
+
+  const scaleX = canvas.width / mapRect.width;
+  const scaleY = canvas.height / mapRect.height;
+
+  const points = [];
+
+  routeIndexes.forEach(index=>{
+    const markerLayer = layers[index];
+
+    if(!markerLayer || !markerLayer._icon){
+      return;
+    }
+
+    const iconRect = markerLayer._icon.getBoundingClientRect();
+
+    const x = ((iconRect.left + iconRect.width / 2) - mapRect.left) * scaleX;
+    const y = ((iconRect.top + iconRect.height / 2) - mapRect.top) * scaleY;
+
+    points.push({x,y});
+  });
+
+  if(points.length < 2){
+    return;
+  }
 
   const ctx = canvas.getContext("2d");
 
   ctx.save();
 
   ctx.strokeStyle = "#FFDD09";
-  ctx.lineWidth = 5 * scaleX;
+  ctx.lineWidth = 6 * scaleX;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
@@ -1342,19 +1367,16 @@ function drawRouteOnCanvas(canvas){
 
   ctx.beginPath();
 
-  route.forEach((wp,index)=>{
-    const point = map.latLngToContainerPoint([wp.lat, wp.lon]);
-    const x = point.x * scaleX;
-    const y = point.y * scaleY;
-
+  points.forEach((point,index)=>{
     if(index === 0){
-      ctx.moveTo(x,y);
+      ctx.moveTo(point.x, point.y);
     }else{
-      ctx.lineTo(x,y);
+      ctx.lineTo(point.x, point.y);
     }
   });
 
   ctx.stroke();
+
   ctx.restore();
 }
 
